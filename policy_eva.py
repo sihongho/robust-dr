@@ -1,0 +1,83 @@
+import numpy as np
+from environment import *
+from mdtl import *
+
+def get_deterministic_policy_from_Q(Q):
+    policy = np.argmax(Q, axis=1)  
+    return policy
+
+def get_stochastic_policy_from_Q(Q, temperature=1.0):
+    """
+    Derive a stochastic policy using softmax from Q values.
+
+    Parameters:
+    - Q: A 2D NumPy array of shape (num_states, num_actions).
+    - temperature: A float, the temperature parameter for softmax.
+
+    Returns:
+    - policy: A 2D NumPy array of shape (num_states, num_actions), where policy[s, a] is the probability of taking action a in state s.
+    """
+    exp_Q = np.exp(Q / temperature)  # Apply softmax to Q values
+    policy = exp_Q / np.sum(exp_Q, axis=1, keepdims=True)  # Normalize to get probabilities
+    return policy
+
+def policy_evaluation(Q, env, R, gamma=0.99, theta=1e-6, max_iterations=1000, policy_type="deterministic"):
+    # Derive policy from Q
+    if policy_type == "deterministic":
+        policy = get_stochastic_policy_from_Q(Q)
+    else:
+        policy = get_stochastic_policy_from_Q(Q)
+    state_count = env.state_count
+    action_count = env.action_count
+
+    # Extract kernels and rewards
+    kernels = env.kernels  # Shape: (state_count, action_count, state_count)
+    rewards = env.rewards  # Shape: (state_count, action_count)
+
+    # Initialize value function
+    V = np.zeros(state_count)
+
+    for i in range(max_iterations):
+        delta = 0
+        # Update V(s) for each state
+        for s in range(state_count):
+            v = V[s]
+            V[s] = sum(
+                policy[s, a] * (rewards[s, a] + gamma * sum(kernels[s, a, s_next] * calculate_optimal_value(V, kernels[s, a], R) for s_next in range(state_count)))
+                for a in range(action_count)
+            )
+            delta = max(delta, abs(v - V[s]))
+        
+        # Check for convergence
+        if delta < theta:
+            print(f"Policy evaluation converged after {i + 1} iterations.")
+            break
+    else:
+        print("Policy evaluation reached the maximum number of iterations without full convergence.")
+
+    return V
+
+if __name__ == "__main__":
+    # Initialize environment and uncertainty set
+    env = Environment(state_count=10, action_count=3, seed=42)
+    uncertainty_set = env.create_uncertainty_set(R=0, bias=0, num_mdps=3)
+
+    # Define shared parameters
+    params = {
+        "uncertainty_set": uncertainty_set,
+        "T": 10,
+        "K": 3,
+        "gamma": 0.99,
+        "lambdas": [0.1] * 10,
+        "E": 2,
+        "state_count": 10,
+        "action_count": 3,
+        "R": 0
+    }
+
+    # Compute Q-values for "avg" mode
+    Q, _ = MDTL_Periodic(**params, mode="avg")
+    V_eva_non_robust = policy_evaluation(Q, env, R=0, gamma=0.99)
+    print(V_eva_non_robust)
+    V_eva_robust = policy_evaluation(Q, env, R=0.2, gamma=0.99)
+    print(V_eva_robust)
