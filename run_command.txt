@@ -1,0 +1,26 @@
+#this is the first command, we generate an MDP environment and save it
+#this alg is for our robust avg multi-learn alg
+#You may change load_env_path based on what env you use
+python main.py --state_count 3 --action_count 2 --total_step 5000 --learning_rate 0.1 --discount_rate 0.95 --aggregation_mode avg --eva_max_iterations 5000 --learn_domain nominal --R 0.4 --R_test 0.4 --bias 0.1 --num_mdps 3 --random_seed 42 --E 1
+
+#this alg is for our robust max multi-learn alg
+python main.py --state_count 3 --action_count 2 --total_step 4000 --learning_rate 0.1 --discount_rate 0.95 --aggregation_mode max --eva_max_iterations 5000 --learn_domain nominal --R 0.4 --R_test 0.4 --bias 0.1 --num_mdps 3 --random_seed 42 --E 1 --load_env_path experiments/20250102_110050/env_data.pkl
+
+#this alg is for baseline: non-robust avg multi-learn alg
+python main.py --state_count 3 --action_count 2 --total_step 4000 --learning_rate 0.1 --discount_rate 0.95 --aggregation_mode avg --eva_max_iterations 5000 --learn_domain nominal --R 0 --R_test 0.4 --bias 0.1 --num_mdps 3 --random_seed 42 --E 1 --load_env_path experiments/20250102_110050/env_data.pkl
+
+#this alg is for baseline: non-robust max multi-learn alg
+python main.py --state_count 3 --action_count 2 --total_step 4000 --learning_rate 0.1 --discount_rate 0.95 --aggregation_mode max --eva_max_iterations 5000 --learn_domain nominal --R 0 --R_test 0.4 --bias 0.1 --num_mdps 3 --random_seed 42 --E 1 --load_env_path experiments/20250102_110050/env_data.pkl
+
+#this alg is for baseline: robust single-learn-nominal alg
+python main.py --state_count 3 --action_count 2 --total_step 4000 --learning_rate 0.1 --discount_rate 0.95 --aggregation_mode avg --eva_max_iterations 5000 --learn_domain nominal --R 0.4 --R_test 0.4 --bias 0.1 --num_mdps 1 --random_seed 42 --E 1 --load_env_path experiments/20250102_110050/env_data.pkl
+
+#this alg is for baseline: non-robust single-learn-nominal alg
+python main.py --state_count 3 --action_count 2 --total_step 4000 --learning_rate 0.1 --discount_rate 0.95 --aggregation_mode avg --eva_max_iterations 5000 --learn_domain nominal --R 0 --R_test 0.4 --bias 0.1 --num_mdps 1 --random_seed 42 --E 1 --load_env_path experiments/20250102_110050/env_data.pkl
+
+#this alg is for baseline: robust single-learn-avg alg
+python main.py --state_count 3 --action_count 2 --total_step 4000 --learning_rate 0.1 --discount_rate 0.95 --aggregation_mode avg --eva_max_iterations 5000 --learn_domain avg --R 0.4 --R_test 0.4 --bias 0.1 --num_mdps 1 --random_seed 42 --E 1 --load_env_path experiments/20250102_110050/env_data.pkl
+
+#this alg is for baseline: non-robust single-learn-avg alg
+python main.py --state_count 3 --action_count 2 --total_step 4000 --learning_rate 0.1 --discount_rate 0.95 --aggregation_mode avg --eva_max_iterations 5000 --learn_domain avg --R 0 --R_test 0.4 --bias 0.1 --num_mdps 1 --random_seed 42 --E 1 --load_env_path experiments/20250102_110050/env_data.pkl
+
