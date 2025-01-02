@@ -43,6 +43,10 @@ def main(args):
         env = data["env"]
         uncertainty_set = data["uncertainty_set"]
         average_env = data["average_env"]
+        if num_mdps == 1:
+            uncertainty_set, average_env = [env.copy()], env.copy()
+            if learn_domain == 'avg':
+                uncertainty_set = [average_env.copy()]
     else:
         env = Environment(state_count=state_count, action_count=action_count)
         if num_mdps > 1:
