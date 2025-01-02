@@ -126,8 +126,8 @@ if __name__ == "__main__":
     # Add arguments with default values
     parser.add_argument("--state_count", type=int, default=3, help="Number of states in the environment (default: 15)")
     parser.add_argument("--action_count", type=int, default=2, help="Number of actions in the environment (default: 30)")
-    parser.add_argument("--total_step", type=int, default=4000, help="Total number of steps to run MDTL (default: 100)")
-    parser.add_argument("--learning_rate", type=float, default=0.01, help="Learning rate for MDTL (default: 0.01)")
+    parser.add_argument("--total_step", type=int, default=5000, help="Total number of steps to run MDTL (default: 100)")
+    parser.add_argument("--learning_rate", type=float, default=0.1, help="Learning rate for MDTL (default: 0.01)")
     parser.add_argument("--discount_rate", type=float, default=0.95, help="Discount factor for rewards (default: 0.95)")
     parser.add_argument("--aggregation_mode", type=str, choices=["avg", "max"], default="avg", help="Aggregation mode: 'avg' or 'max' (default: 'avg')")
     parser.add_argument("--eva_max_iterations", type=int, default=5000)
@@ -137,10 +137,10 @@ if __name__ == "__main__":
     parser.add_argument("--R_test", type=float, default=0.4, help="Radius for uncertainty set (default: 0.4)")
     parser.add_argument("--bias", type=float, default=0.1, help="Bias for uncertainty set (default: 0.1)")
     parser.add_argument("--num_mdps", type=int, default=2, help="Number of MDPs in the uncertainty set (default: 2)")
-    parser.add_argument("--random_seed", type=int, default=42, help="Random seed for reproducibility (default: 42)")
+    parser.add_argument("--random_seed", type=int, default=None, help="Random seed for reproducibility (default: 42)")
     parser.add_argument("--E", type=int, default=5, help="Periodic number for MDTL aggregation (default: 2)")
     parser.add_argument("--load_env_path", type=str, default=None, help="Path to the file containing pre-saved environment and uncertainty set (default: './env_data.pkl')")
-    parser.add_argument("--save_env_path", type=str, default="./env_data.pkl", help="Path to save the current environment and uncertainty set (default: './env_data.pkl')")
+    # parser.add_argument("--save_env_path", type=str, default="env_data.pkl", help="Path to save the current environment and uncertainty set (default: './env_data.pkl')")
     # Parse arguments
     args = parser.parse_args()
     print(args)
