@@ -56,6 +56,15 @@ class Environment:
         """Get reward for a given state and action."""
         return self.rewards[state, action]
     
+    # Ziying
+    def copy(self):
+        new_env = Environment(self.state_count, self.action_count)
+        new_env.kernels = np.copy(self.kernels)
+        new_env.rewards = np.copy(self.rewards)
+        new_env.nominal_kernels = np.copy(self.nominal_kernels)
+        new_env.nominal_rewards = np.copy(self.nominal_rewards)
+        return new_env
+    
     def _add_perturbation(self, nominal_probs, R, bias=0):
         """
         Add a bounded, biased perturbation to the nominal probabilities.
