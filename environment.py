@@ -1,4 +1,5 @@
 import numpy as np
+import logging
 
 class Environment:
     def __init__(self, state_count, action_count, seed=None):
@@ -112,13 +113,16 @@ class Environment:
                 - list[Environment]: A list of Environment objects representing the uncertainty set.
                 - Environment: An Environment object representing the MDP with average kernels and rewards.
         """
+        # Ensure NumPy arrays are printed in full
+        np.set_printoptions(threshold=np.inf, suppress=True, precision=6)
+
         uncertainty_set = []
         
         # Initialize accumulators for kernels and rewards
         total_kernels = np.zeros_like(self.nominal_kernels)
         total_rewards = np.zeros_like(self.nominal_rewards)
 
-        for _ in range(num_mdps):
+        for i in range(num_mdps):
             # Create a new perturbed kernel
             uncertain_kernels = np.zeros_like(self.nominal_kernels)
             for s in range(self.state_count):
@@ -134,6 +138,12 @@ class Environment:
             new_env.kernels = uncertain_kernels  # Assign the perturbed kernels
             new_env.rewards = self.nominal_rewards.copy()  # Use the same reward structure
             uncertainty_set.append(new_env)
+
+            # Log details of the current MDP in the uncertainty set
+            logging.info(f"Uncertainty Set MDP {i+1}:")
+            logging.info(f"Kernels:\n{uncertain_kernels}")
+            logging.info(f"Rewards:\n{self.nominal_rewards}")
+            logging.info("-" * 50)
         
         # Compute the averages
         average_kernels = total_kernels / num_mdps
@@ -143,5 +153,133 @@ class Environment:
         average_env = Environment(self.state_count, self.action_count)
         average_env.kernels = average_kernels
         average_env.rewards = average_rewards
+
+        # Log the average MDP details
+        logging.info("Average MDP:")
+        logging.info(f"Kernels:\n{average_kernels}")
+        logging.info(f"Rewards:\n{average_rewards}")
+        logging.info("=" * 50)
+
+        return uncertainty_set, average_env
+    
+class RobotEnvironment(Environment):
+    def __init__(self, alpha, beta, seed=None):
+        # Constants for number of states and actions
+        self.state_count = 3  # States: 'high', 'low', 'dead'
+        self.action_count = 2  # Actions: 'search', 'wait'
+
+        # Constants for transition probabilities
+        self.alpha = alpha  # Pr(stay at high charge if searching | now have high charge)
+        self.beta = beta   # Pr(stay at low charge if searching | now have low charge)
+
+        # Constants for rewards
+        self.r_search = 50   # reward for searching
+        self.r_wait = 10     # reward for waiting
+        self.r_dead = 0      # reward (actually penalty) for dead
+
+        super().__init__(self.state_count, self.action_count)
+
+    def _generate_transition_kernels(self):
+        """Generate transition probability kernels for all states and actions."""
+        kernels = np.zeros((self.state_count, self.action_count, self.state_count))
+
+        # Action 'search' (action index 0)
+        kernels[0, 0, 0] = self.alpha     # High to High
+        kernels[0, 0, 1] = 1 - self.alpha # High to Low
+        kernels[0, 0, 2] = 0              # High to Dead
+        kernels[1, 0, 0] = 0              # Low to High
+        kernels[1, 0, 1] = self.beta      # Low to Low
+        kernels[1, 0, 2] = 1 - self.beta  # Low to Dead
+        kernels[2, 0, 2] = 1              # Dead to Dead
+
+        # Action 'wait' (action index 1)
+        kernels[0, 1, 0] = 1  # High stays High
+        kernels[1, 1, 1] = 1  # Low stays Low
+        kernels[2, 1, 2] = 1  # Dead stays Dead
+
+        return kernels
+    
+    def _generate_rewards(self):
+        """Generate reward matrix for all states and actions."""
+        rewards = np.zeros((self.state_count, self.action_count))
+
+        # Rewards for actions
+        rewards[0, 0] = self.r_search  # High state, search
+        rewards[1, 0] = self.r_search  # Low state, search
+        rewards[0, 1] = self.r_wait    # High state, wait
+        rewards[1, 1] = self.r_wait    # Low state, wait
+        rewards[2, 0] = self.r_dead    # Dead state, search
+        rewards[2, 1] = self.r_dead    # Dead state, wait
+        return rewards
+    
+    def copy(self):
+        new_env = RobotEnvironment(self.alpha, self.beta)
+        new_env.kernels = np.copy(self.kernels)
+        new_env.rewards = np.copy(self.rewards)
+        new_env.nominal_kernels = np.copy(self.nominal_kernels)
+        new_env.nominal_rewards = np.copy(self.nominal_rewards)
+        return new_env
+    
+    def create_uncertainty_set(self, R, bias=0, num_mdps=10):
+        """
+        Create an uncertainty set of MDPs based on the nominal MDP, 
+        and compute the average perturbed kernels and rewards as a new MDP.
+
+        Args:
+            R (float): Maximum perturbation radius.
+            bias (float): Bias to be added to the noise, introducing asymmetry.
+            num_mdps (int): Number of MDPs in the uncertainty set.
+
+        Returns:
+            tuple: A tuple containing:
+                - list[Environment]: A list of Environment objects representing the uncertainty set.
+                - Environment: An Environment object representing the MDP with average kernels and rewards.
+        """
+        # Ensure NumPy arrays are printed in full
+        np.set_printoptions(threshold=np.inf, suppress=True, precision=6)
+
+        uncertainty_set = []
+        
+        # Initialize accumulators for kernels and rewards
+        total_kernels = np.zeros_like(self.nominal_kernels)
+        total_rewards = np.zeros_like(self.nominal_rewards)
+
+        for i in range(num_mdps):
+            # Create a new perturbed kernel
+            uncertain_kernels = np.zeros_like(self.nominal_kernels)
+            for s in range(self.state_count):
+                for a in range(self.action_count):
+                    uncertain_kernels[s, a] = self._add_perturbation(self.nominal_kernels[s, a], R, bias)
+            
+            # Accumulate the perturbed kernels and rewards
+            total_kernels += uncertain_kernels
+            total_rewards += self.nominal_rewards  # Rewards are not perturbed
+            
+            # Create a new Environment with the perturbed kernel and original rewards
+            new_env = RobotEnvironment(self.alpha, self.beta)
+            new_env.kernels = uncertain_kernels  # Assign the perturbed kernels
+            new_env.rewards = self.nominal_rewards.copy()  # Use the same reward structure
+            uncertainty_set.append(new_env)
+
+            # Log details of the current MDP in the uncertainty set
+            logging.info(f"Uncertainty Set MDP {i+1}:")
+            logging.info(f"Kernels:\n{uncertain_kernels}")
+            logging.info(f"Rewards:\n{self.nominal_rewards}")
+            logging.info("-" * 50)
+        
+        # Compute the averages
+        average_kernels = total_kernels / num_mdps
+        average_rewards = total_rewards / num_mdps
+
+        # Create an Environment object for the average MDP
+        average_env = Environment(self.state_count, self.action_count)
+        average_env.kernels = average_kernels
+        average_env.rewards = average_rewards
+
+        # Log the average MDP details
+        logging.info("Average MDP:")
+        logging.info(f"Kernels:\n{average_kernels}")
+        logging.info(f"Rewards:\n{average_rewards}")
+        logging.info("=" * 50)
 
         return uncertainty_set, average_env
