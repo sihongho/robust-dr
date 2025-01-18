@@ -41,7 +41,10 @@ def MDTL_Periodic(uncertainty_set, T, K, gamma, lambdas, E, state_count, action_
                 for a in range(action_count):
                     next_state_distribution = mdp.kernels[s, a]  # Transition probabilities
                     reward = mdp.get_reward(s, a)
-                    opt_all = calculate_optimal_value(V_k[k], next_state_distribution, R)
+                    if a == 0:
+                        opt_all = calculate_optimal_value(V_k[k], next_state_distribution, R)
+                    else:
+                        opt_all = np.inner(V_k[k], next_state_distribution)
                     Q_k[k][s, a] = (1 - lambdas[t]) * Q_k[k][s, a] + lambdas[t] * (reward + gamma * opt_all)
 
         # Periodic aggregation: if t mod E == 0
@@ -55,16 +58,16 @@ def MDTL_Periodic(uncertainty_set, T, K, gamma, lambdas, E, state_count, action_
             all_Q.append(Q_result.copy())
 
             # Check for convergence
-            max_change = 0
-            for k in range(K):
-                max_change = max(max_change, np.max(np.abs(Q_k[k] - Q_result)))
-                Q_k[k] = Q_result.copy()
+            # max_change = 0
+            # for k in range(K):
+            #     max_change = max(max_change, np.max(np.abs(Q_k[k] - Q_result)))
+            #     Q_k[k] = Q_result.copy()
 
             # If the maximum change is below the tolerance, stop iterations
-            if max_change < tolerance:
-                logging.info(f"Algorithm converged after {t + 1} iterations.")
-                converged = True
-                break
+            # if max_change < tolerance:
+            #     logging.info(f"Algorithm converged after {t + 1} iterations.")
+            #     converged = True
+            #     break
 
     # Final aggregation
     if mode == "avg":

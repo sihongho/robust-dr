@@ -3,7 +3,21 @@ from environment import *
 from mdtl import *
 
 def get_deterministic_policy_from_Q(Q):
-    policy = np.argmax(Q, axis=1)  
+    """
+    Derive a deterministic policy from Q values.
+
+
+    Parameters:
+    - Q: A 2D NumPy array of shape (num_states, num_actions).
+
+
+    Returns:
+    - policy: A 2D NumPy array of shape (num_states, num_actions), where policy[s, a] is 1 if action a is the best action for state s, and 0 otherwise.
+    """
+    num_states, num_actions = Q.shape
+    policy = np.zeros_like(Q)
+    best_actions = np.argmax(Q, axis=1)  # Get the index of the best action for each state
+    policy[np.arange(num_states), best_actions] = 1  # Set the best action's probability to 1
     return policy
 
 def get_stochastic_policy_from_Q(Q, temperature=1.0):
@@ -24,7 +38,7 @@ def get_stochastic_policy_from_Q(Q, temperature=1.0):
 def policy_evaluation(Q, env, R, gamma=0.99, theta=1e-6, max_iterations=1000, policy_type="deterministic"):
     # Derive policy from Q
     if policy_type == "deterministic":
-        policy = get_stochastic_policy_from_Q(Q)
+        policy = get_deterministic_policy_from_Q(Q)
     else:
         policy = get_stochastic_policy_from_Q(Q)
     state_count = env.state_count

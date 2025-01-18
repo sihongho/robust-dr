@@ -4,7 +4,7 @@ import json
 import os
 import logging
 from datetime import datetime
-from environment import Environment
+from environment import Environment, RobotEnvironment
 # from config import CONFIG, MODE
 from mdtl import MDTL_Periodic
 from policy_eva import policy_evaluation
@@ -14,7 +14,10 @@ from utils import *
 def main(args):
     # Load parameters from command-line arguments or CONFIG
     state_count = args.state_count 
-    action_count = args.action_count 
+    action_count = args.action_count
+    alpha = args.alpha
+    beta = args.beta
+    env_type = args.env_type 
     total_step = args.total_step 
     learning_rate = args.learning_rate 
     discount_rate = args.discount_rate 
@@ -48,7 +51,10 @@ def main(args):
             if learn_domain == 'avg':
                 uncertainty_set = [average_env.copy()]
     else:
-        env = Environment(state_count=state_count, action_count=action_count)
+        if env_type == 'robot':
+            env = RobotEnvironment(alpha=alpha, beta=beta)
+        else:
+            env = Environment(state_count=state_count, action_count=action_count)
         if num_mdps > 1:
             uncertainty_set, average_env = env.create_uncertainty_set(num_mdps=num_mdps, R=R)
         else:
@@ -126,6 +132,9 @@ if __name__ == "__main__":
     # Add arguments with default values
     parser.add_argument("--state_count", type=int, default=3, help="Number of states in the environment (default: 15)")
     parser.add_argument("--action_count", type=int, default=2, help="Number of actions in the environment (default: 30)")
+    parser.add_argument("--alpha", type=float, default=0.1, help="Pr(stay at high charge if searching | now have high charge) (default: 0.1)")
+    parser.add_argument("--beta", type=float, default=0.1, help="Pr(stay at low charge if searching | now have low charge) (default: 0.1)")
+    parser.add_argument("--env_type", type=str, choices=["robot", "env"], default="env", help="Environment type: RobotEnvironment or Environment (default: Environment)")
     parser.add_argument("--total_step", type=int, default=5000, help="Total number of steps to run MDTL (default: 100)")
     parser.add_argument("--learning_rate", type=float, default=0.1, help="Learning rate for MDTL (default: 0.01)")
     parser.add_argument("--discount_rate", type=float, default=0.95, help="Discount factor for rewards (default: 0.95)")
