@@ -23,6 +23,7 @@ def main(args):
     discount_rate = args.discount_rate 
     aggregation_mode = args.aggregation_mode 
     eva_max_iterations = args.eva_max_iterations
+    bias = args.bias
     R = args.R 
     R_test = args.R_test
     E = args.E
@@ -56,7 +57,7 @@ def main(args):
         else:
             env = Environment(state_count=state_count, action_count=action_count)
         if num_mdps > 1:
-            uncertainty_set, average_env = env.create_uncertainty_set(num_mdps=num_mdps, R=R)
+            uncertainty_set, average_env = env.create_uncertainty_set(num_mdps=num_mdps, R=R, bias=bias)
         else:
             uncertainty_set, average_env = [env.copy()], env.copy()
         if learn_domain == 'avg':

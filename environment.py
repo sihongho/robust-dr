@@ -243,20 +243,35 @@ class RobotEnvironment(Environment):
         # Initialize accumulators for kernels and rewards
         total_kernels = np.zeros_like(self.nominal_kernels)
         total_rewards = np.zeros_like(self.nominal_rewards)
+        total_alpha = 0
+        total_beta = 0
 
         for i in range(num_mdps):
             # Create a new perturbed kernel
             uncertain_kernels = np.zeros_like(self.nominal_kernels)
-            for s in range(self.state_count):
-                for a in range(self.action_count):
-                    uncertain_kernels[s, a] = self._add_perturbation(self.nominal_kernels[s, a], R, bias)
+            new_alpha = R + np.random.uniform(-bias, bias)
+            new_beta = R + np.random.uniform(-bias, bias)
+            # Action 'search' (action index 0)
+            uncertain_kernels[0, 0, 0] = new_alpha     # High to High
+            uncertain_kernels[0, 0, 1] = 1 - new_alpha # High to Low
+            uncertain_kernels[0, 0, 2] = 0              # High to Dead
+            uncertain_kernels[1, 0, 0] = 0              # Low to High
+            uncertain_kernels[1, 0, 1] = new_beta      # Low to Low
+            uncertain_kernels[1, 0, 2] = 1 - new_beta  # Low to Dead
+            uncertain_kernels[2, 0, 2] = 1              # Dead to Dead
+            # Action 'wait' (action index 1)
+            uncertain_kernels[0, 1, 0] = 1  # High stays High
+            uncertain_kernels[1, 1, 1] = 1  # Low stays Low
+            uncertain_kernels[2, 1, 2] = 1  # Dead stays Dead
             
             # Accumulate the perturbed kernels and rewards
             total_kernels += uncertain_kernels
             total_rewards += self.nominal_rewards  # Rewards are not perturbed
+            total_alpha += new_alpha
+            total_beta += new_beta
             
             # Create a new Environment with the perturbed kernel and original rewards
-            new_env = RobotEnvironment(self.alpha, self.beta)
+            new_env = RobotEnvironment(new_alpha, new_beta)
             new_env.kernels = uncertain_kernels  # Assign the perturbed kernels
             new_env.rewards = self.nominal_rewards.copy()  # Use the same reward structure
             uncertainty_set.append(new_env)
@@ -270,9 +285,11 @@ class RobotEnvironment(Environment):
         # Compute the averages
         average_kernels = total_kernels / num_mdps
         average_rewards = total_rewards / num_mdps
+        average_alpha = total_alpha / num_mdps
+        average_beta = total_beta / num_mdps
 
         # Create an Environment object for the average MDP
-        average_env = Environment(self.state_count, self.action_count)
+        average_env = RobotEnvironment(average_alpha, average_beta)
         average_env.kernels = average_kernels
         average_env.rewards = average_rewards
 
