@@ -300,3 +300,90 @@ class RobotEnvironment(Environment):
         logging.info("=" * 50)
 
         return uncertainty_set, average_env
+    
+class InventoryEnvironment(Environment):
+    def __init__(self, state_count, action_count, max_demand=29, demand_prob=None):
+        self.states = np.arange(0, state_count)     # Inventory levels from 0 to state_count.
+        self.actions = np.arange(0, action_count)   # Possible orders from 0 to action_count units.
+
+        self.max_demand = max_demand
+        if demand_prob is not None:
+            self.demand_prob = demand_prob
+        else:
+            self.demand_prob = self._generate_demand_distribution()
+
+        # Costs and rewards
+        self.order_cost = 3
+        self.holding_cost = 3
+        self.sale_price = 5
+        self.penalty_cost = -15
+
+        super().__init__(state_count, action_count)
+
+    def _generate_transition_kernels(self):
+        """Generate transition probability kernels for all states and actions."""
+        kernels = np.zeros((self.state_count, self.action_count, self.state_count))
+        for s in range(self.state_count):
+            for a in range(self.action_count):
+                for d in range(self.max_demand + 1):
+                    next_state = max(0, s + a - d)  # Calculate the next state after demand is met
+                    if next_state < self.state_count:
+                        kernels[s, a, next_state] += self.demand_prob[d]
+        return kernels
+    
+    def _generate_rewards(self):
+        """Generate reward matrix for all states and actions."""
+        rewards = np.zeros((self.state_count, self.action_count))
+        for s in range(self.state_count):
+            for a in range(self.action_count):
+                expected_reward = 0
+                for d in range (self.max_demand + 1):
+                    if d <= s + a:
+                        reward = (self.sale_price * d) - (self.holding_cost * (s + a))
+                    else:
+                        reward = self.penalty_cost
+                    expected_reward += reward * self.demand_prob[d]
+                expected_reward -= self.order_cost * a
+                rewards[s, a] = expected_reward
+        return rewards
+
+    def _generate_demand_distribution(self):
+        """Generate a random demand probability distribution and normalize it."""
+        demand_prob = np.random.rand(self.max_demand + 1)
+        return demand_prob / demand_prob.sum()  # Normalize to make a valid probability distribution
+
+    def copy(self):
+        new_env = InventoryEnvironment(self.state_count, self.action_count, self.max_demand, self.demand_prob)
+        new_env.kernels = np.copy(self.kernels)
+        new_env.rewards = np.copy(self.rewards)
+        new_env.nominal_kernels = np.copy(self.nominal_kernels)
+        new_env.nominal_rewards = np.copy(self.nominal_rewards)
+        return new_env
+    
+    def create_uncertainty_set(self, R, bias=0, num_mdps=10):
+        uncertainty_set = []
+        total_demand_prob = np.zeros_like(self.demand_prob)
+        for i in range(num_mdps):
+            uncertain_demand_prob = self._add_perturbation(self.demand_prob, R, bias)
+            total_demand_prob += uncertain_demand_prob
+            new_env = InventoryEnvironment(self.state_count, self.action_count, self.max_demand, uncertain_demand_prob)
+            uncertainty_set.append(new_env)
+
+            # Log details of the current MDP in the uncertainty set
+            logging.info(f"Uncertainty Set MDP {i+1}:")
+            logging.info(f"Demand prob:\n{uncertain_demand_prob}")
+            logging.info(f"Kernels:\n{new_env.kernels}")
+            logging.info(f"Rewards:\n{new_env.rewards}")
+            logging.info("-" * 50)
+
+        average_demand_prob = total_demand_prob / num_mdps
+        average_env = InventoryEnvironment(self.state_count, self.action_count, self.max_demand, average_demand_prob)
+
+        # Log the average MDP details
+        logging.info("Average MDP:")
+        logging.info(f"Demand prob:\n{average_demand_prob}")
+        logging.info(f"Kernels:\n{average_env.kernels}")
+        logging.info(f"Rewards:\n{average_env.rewards}")
+        logging.info("=" * 50)
+
+        return uncertainty_set, average_env
