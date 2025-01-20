@@ -177,7 +177,7 @@ class RobotEnvironment(Environment):
         self.r_wait = 10     # reward for waiting
         self.r_dead = 0      # reward (actually penalty) for dead
 
-        super().__init__(self.state_count, self.action_count)
+        super().__init__(self.state_count, self.action_count, seed)
 
     def _generate_transition_kernels(self):
         """Generate transition probability kernels for all states and actions."""
@@ -302,7 +302,7 @@ class RobotEnvironment(Environment):
         return uncertainty_set, average_env
     
 class InventoryEnvironment(Environment):
-    def __init__(self, state_count, action_count, max_demand=29, demand_prob=None):
+    def __init__(self, state_count, action_count, max_demand=29, demand_prob=None, seed=None):
         self.states = np.arange(0, state_count)     # Inventory levels from 0 to state_count.
         self.actions = np.arange(0, action_count)   # Possible orders from 0 to action_count units.
 
@@ -318,7 +318,7 @@ class InventoryEnvironment(Environment):
         self.sale_price = 5
         self.penalty_cost = -15
 
-        super().__init__(state_count, action_count)
+        super().__init__(state_count, action_count, seed)
 
     def _generate_transition_kernels(self):
         """Generate transition probability kernels for all states and actions."""
@@ -387,3 +387,136 @@ class InventoryEnvironment(Environment):
         logging.info("=" * 50)
 
         return uncertainty_set, average_env
+    
+class GamblerEnvironment(Environment):
+    def __init__(self, state_count, head_prob, seed=None):
+        self.state_count = state_count
+        self.action_count = state_count
+        self.goal = state_count - 1
+        self.head_prob = head_prob
+
+        # Set random seed for reproducibility
+        if seed is not None:
+            np.random.seed(seed)
+
+        # Generate nominal MDP
+        self.kernels = self._generate_transition_kernels()
+        self.rewards = self._generate_rewards()
+
+        # Save nominal MDP
+        self.nominal_kernels = self.kernels.copy()
+        self.nominal_rewards = self.rewards.copy()
+
+    def _generate_transition_kernels(self):
+        kernels = np.zeros((self.state_count, self.state_count, self.state_count))
+        for s in range(1, self.goal):
+            max_bet = min(s, self.goal - s)
+            for a in range(1, max_bet + 1):
+                win_state = s + a
+                lose_state = s - a
+                kernels[s, a, win_state] = self.head_prob
+                kernels[s, a, lose_state] = 1 - self.head_prob
+
+        kernels[0, :, 0] = 1.0  # If bankrupt, stay bankrupt
+        kernels[self.goal, :, self.goal] = 1.0  # If reached goal, stay
+        return kernels
+    
+    def _generate_rewards(self):
+        rewards = np.zeros((self.state_count, self.action_count))
+        rewards[self.goal, :] = 1
+        return rewards
+    
+    def step(self, state, action):
+        if state == 0 or state == self.goal:
+            return state, 0  # Terminal states
+        
+        max_bet = min(state, self.goal_state - state)
+        if action < 1 or action > max_bet:
+            raise ValueError(f"Invalid bet amount: {action} at state {state}. Must be in [1, {max_bet}].")
+
+        win = np.random.rand() < self.head_prob
+        next_state = state + action if win else state - action
+        next_state = max(0, min(next_state, self.goal))  # Ensure within bounds
+
+        return next_state, self.rewards[state, action]
+    
+    def _add_perturbation(self, kernels, R, bias=0):
+        # Generate noise with symmetric distribution
+        noise = np.random.uniform(-R, R, kernels.shape)
+
+        # Add bias to introduce asymmetry
+        biased_noise = noise + bias
+
+        # Apply the biased noise to nominal probabilities
+        perturbed_kernels = kernels + biased_noise
+
+        # Ensure probabilities are non-negative and renormalize
+        perturbed_kernels = np.clip(perturbed_kernels, 0, None)  # Clip to non-negative
+
+        for s in range(self.state_count):
+            for a in range(self.state_count):
+                if a > min(s, self.goal - s):
+                    perturbed_kernels[s, a] = 0
+                else:
+                    if perturbed_kernels[s, a].sum() > 0:
+                        perturbed_kernels[s, a] /= perturbed_kernels[s, a].sum()
+
+        return perturbed_kernels
+    
+    def create_uncertainty_set(self, R, bias=0, num_mdps=10):
+        """
+        Create an uncertainty set of MDPs based on the nominal MDP, 
+        and compute the average perturbed kernels and rewards as a new MDP.
+
+        Args:
+            R (float): Maximum perturbation radius.
+            bias (float): Bias to be added to the noise, introducing asymmetry.
+            num_mdps (int): Number of MDPs in the uncertainty set.
+
+        Returns:
+            tuple: A tuple containing:
+                - list[Environment]: A list of Environment objects representing the uncertainty set.
+                - Environment: An Environment object representing the MDP with average kernels and rewards.
+        """
+        # Ensure NumPy arrays are printed in full
+        np.set_printoptions(threshold=np.inf, suppress=True, precision=6)
+
+        uncertainty_set = []
+        
+        # Initialize accumulators for kernels and rewards
+        total_kernels = np.zeros_like(self.nominal_kernels)
+        total_rewards = np.zeros_like(self.nominal_rewards)
+
+        for i in range(num_mdps):
+            # Create a new perturbed kernel
+            uncertain_kernels = self._add_perturbation(self.nominal_kernels, R, bias)
+            
+            # Accumulate the perturbed kernels and rewards
+            total_kernels += uncertain_kernels
+            
+            # Create a new Environment with the perturbed kernel and original rewards
+            new_env = GamblerEnvironment(self.state_count, self.head_prob)
+            new_env.kernels = uncertain_kernels  # Assign the perturbed kernels
+            uncertainty_set.append(new_env)
+
+            # Log details of the current MDP in the uncertainty set
+            logging.info(f"Uncertainty Set MDP {i+1}:")
+            logging.info(f"Kernels:\n{uncertain_kernels}")
+            logging.info(f"Rewards:\n{self.nominal_rewards}")
+            logging.info("-" * 50)
+        
+        # Compute the averages
+        average_kernels = total_kernels / num_mdps
+
+        # Create an Environment object for the average MDP
+        average_env = GamblerEnvironment(self.state_count, self.head_prob)
+        average_env.kernels = average_kernels
+
+        # Log the average MDP details
+        logging.info("Average MDP:")
+        logging.info(f"Kernels:\n{average_kernels}")
+        logging.info(f"Rewards:\n{average_env.rewards}")
+        logging.info("=" * 50)
+
+        return uncertainty_set, average_env
+
