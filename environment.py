@@ -66,6 +66,15 @@ class Environment:
         new_env.nominal_rewards = np.copy(self.nominal_rewards)
         return new_env
     
+    def _perturb_parameter(self, old_param, R, bias):
+        lower_limit = max(0, old_param - R)
+        higher_limit = min(1, old_param + R)
+        while True:
+            new_param = np.random.uniform(lower_limit, higher_limit)
+            if new_param >= old_param + bias or new_param <= old_param - bias:
+                break
+        return new_param
+    
     def _add_perturbation(self, nominal_probs, R, bias=0):
         """
         Add a bounded, biased perturbation to the nominal probabilities.
@@ -240,63 +249,41 @@ class RobotEnvironment(Environment):
 
         uncertainty_set = []
         
-        # Initialize accumulators for kernels and rewards
-        total_kernels = np.zeros_like(self.nominal_kernels)
-        total_rewards = np.zeros_like(self.nominal_rewards)
         total_alpha = 0
         total_beta = 0
 
         for i in range(num_mdps):
-            # Create a new perturbed kernel
-            uncertain_kernels = np.zeros_like(self.nominal_kernels)
-            new_alpha = R + np.random.uniform(-bias, bias)
-            new_beta = R + np.random.uniform(-bias, bias)
-            # Action 'search' (action index 0)
-            uncertain_kernels[0, 0, 0] = new_alpha     # High to High
-            uncertain_kernels[0, 0, 1] = 1 - new_alpha # High to Low
-            uncertain_kernels[0, 0, 2] = 0              # High to Dead
-            uncertain_kernels[1, 0, 0] = 0              # Low to High
-            uncertain_kernels[1, 0, 1] = new_beta      # Low to Low
-            uncertain_kernels[1, 0, 2] = 1 - new_beta  # Low to Dead
-            uncertain_kernels[2, 0, 2] = 1              # Dead to Dead
-            # Action 'wait' (action index 1)
-            uncertain_kernels[0, 1, 0] = 1  # High stays High
-            uncertain_kernels[1, 1, 1] = 1  # Low stays Low
-            uncertain_kernels[2, 1, 2] = 1  # Dead stays Dead
+            new_alpha = self._perturb_parameter(self.alpha, R, bias)
+            new_beta = self._perturb_parameter(self.beta, R, bias)
             
-            # Accumulate the perturbed kernels and rewards
-            total_kernels += uncertain_kernels
-            total_rewards += self.nominal_rewards  # Rewards are not perturbed
             total_alpha += new_alpha
             total_beta += new_beta
             
             # Create a new Environment with the perturbed kernel and original rewards
             new_env = RobotEnvironment(new_alpha, new_beta)
-            new_env.kernels = uncertain_kernels  # Assign the perturbed kernels
-            new_env.rewards = self.nominal_rewards.copy()  # Use the same reward structure
             uncertainty_set.append(new_env)
 
             # Log details of the current MDP in the uncertainty set
             logging.info(f"Uncertainty Set MDP {i+1}:")
-            logging.info(f"Kernels:\n{uncertain_kernels}")
-            logging.info(f"Rewards:\n{self.nominal_rewards}")
+            logging.info(f"Alpha: {new_alpha}")
+            logging.info(f"Beta: {new_beta}")
+            logging.info(f"Kernels:\n{new_env.kernels}")
+            logging.info(f"Rewards:\n{new_env.rewards}")
             logging.info("-" * 50)
         
         # Compute the averages
-        average_kernels = total_kernels / num_mdps
-        average_rewards = total_rewards / num_mdps
         average_alpha = total_alpha / num_mdps
         average_beta = total_beta / num_mdps
 
         # Create an Environment object for the average MDP
         average_env = RobotEnvironment(average_alpha, average_beta)
-        average_env.kernels = average_kernels
-        average_env.rewards = average_rewards
 
         # Log the average MDP details
         logging.info("Average MDP:")
-        logging.info(f"Kernels:\n{average_kernels}")
-        logging.info(f"Rewards:\n{average_rewards}")
+        logging.info(f"Alpha: {average_alpha}")
+        logging.info(f"Beta: {average_beta}")
+        logging.info(f"Kernels:\n{average_env.kernels}")
+        logging.info(f"Rewards:\n{average_env.rewards}")
         logging.info("=" * 50)
 
         return uncertainty_set, average_env
@@ -426,6 +413,14 @@ class GamblerEnvironment(Environment):
         rewards[self.goal, :] = 1
         return rewards
     
+    def copy(self):
+        new_env = GamblerEnvironment(self.state_count, self.head_prob)
+        new_env.kernels = np.copy(self.kernels)
+        new_env.rewards = np.copy(self.rewards)
+        new_env.nominal_kernels = np.copy(self.nominal_kernels)
+        new_env.nominal_rewards = np.copy(self.nominal_rewards)
+        return new_env
+    
     def step(self, state, action):
         if state == 0 or state == self.goal:
             return state, 0  # Terminal states
@@ -439,29 +434,6 @@ class GamblerEnvironment(Environment):
         next_state = max(0, min(next_state, self.goal))  # Ensure within bounds
 
         return next_state, self.rewards[state, action]
-    
-    def _add_perturbation(self, kernels, R, bias=0):
-        # Generate noise with symmetric distribution
-        noise = np.random.uniform(-R, R, kernels.shape)
-
-        # Add bias to introduce asymmetry
-        biased_noise = noise + bias
-
-        # Apply the biased noise to nominal probabilities
-        perturbed_kernels = kernels + biased_noise
-
-        # Ensure probabilities are non-negative and renormalize
-        perturbed_kernels = np.clip(perturbed_kernels, 0, None)  # Clip to non-negative
-
-        for s in range(self.state_count):
-            for a in range(self.state_count):
-                if a > min(s, self.goal - s):
-                    perturbed_kernels[s, a] = 0
-                else:
-                    if perturbed_kernels[s, a].sum() > 0:
-                        perturbed_kernels[s, a] /= perturbed_kernels[s, a].sum()
-
-        return perturbed_kernels
     
     def create_uncertainty_set(self, R, bias=0, num_mdps=10):
         """
@@ -483,38 +455,34 @@ class GamblerEnvironment(Environment):
 
         uncertainty_set = []
         
-        # Initialize accumulators for kernels and rewards
-        total_kernels = np.zeros_like(self.nominal_kernels)
-        total_rewards = np.zeros_like(self.nominal_rewards)
+        total_head_prob = 0
 
         for i in range(num_mdps):
-            # Create a new perturbed kernel
-            uncertain_kernels = self._add_perturbation(self.nominal_kernels, R, bias)
+            uncertain_head_prob = self._perturb_parameter(self.head_prob, R, bias)
             
-            # Accumulate the perturbed kernels and rewards
-            total_kernels += uncertain_kernels
+            total_head_prob += uncertain_head_prob
             
             # Create a new Environment with the perturbed kernel and original rewards
-            new_env = GamblerEnvironment(self.state_count, self.head_prob)
-            new_env.kernels = uncertain_kernels  # Assign the perturbed kernels
+            new_env = GamblerEnvironment(self.state_count, uncertain_head_prob)
             uncertainty_set.append(new_env)
 
             # Log details of the current MDP in the uncertainty set
             logging.info(f"Uncertainty Set MDP {i+1}:")
-            logging.info(f"Kernels:\n{uncertain_kernels}")
-            logging.info(f"Rewards:\n{self.nominal_rewards}")
+            logging.info(f"Head prob: {uncertain_head_prob}")
+            logging.info(f"Kernels:\n{new_env.kernels}")
+            logging.info(f"Rewards:\n{new_env.rewards}")
             logging.info("-" * 50)
         
         # Compute the averages
-        average_kernels = total_kernels / num_mdps
+        average_head_prob = total_head_prob / num_mdps
 
         # Create an Environment object for the average MDP
-        average_env = GamblerEnvironment(self.state_count, self.head_prob)
-        average_env.kernels = average_kernels
+        average_env = GamblerEnvironment(self.state_count, average_head_prob)
 
         # Log the average MDP details
         logging.info("Average MDP:")
-        logging.info(f"Kernels:\n{average_kernels}")
+        logging.info(f"Head prob: {average_head_prob}")
+        logging.info(f"Kernels:\n{average_env.kernels}")
         logging.info(f"Rewards:\n{average_env.rewards}")
         logging.info("=" * 50)
 
