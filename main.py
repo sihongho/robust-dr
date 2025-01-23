@@ -55,13 +55,13 @@ def main(args):
                 uncertainty_set = [average_env.copy()]
     else:
         if env_type == 'robot':
-            env = RobotEnvironment(alpha=alpha, beta=beta)
+            env = RobotEnvironment(alpha=alpha, beta=beta, seed=random_seed)
         elif env_type == 'inventory':
-            env = InventoryEnvironment(state_count=state_count, action_count=action_count, max_demand=max_demand)
+            env = InventoryEnvironment(state_count=state_count, action_count=action_count, max_demand=max_demand, seed=random_seed)
         elif env_type == 'gambler':
-            env = GamblerEnvironment(state_count=state_count, head_prob=head_prob)
+            env = GamblerEnvironment(state_count=state_count, head_prob=head_prob, seed=random_seed)
         else:
-            env = Environment(state_count=state_count, action_count=action_count)
+            env = Environment(state_count=state_count, action_count=action_count, seed=random_seed)
         if num_mdps > 1:
             uncertainty_set, average_env = env.create_uncertainty_set(num_mdps=num_mdps, R=R, bias=bias)
         else:
