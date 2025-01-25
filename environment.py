@@ -5,6 +5,7 @@ class Environment:
     def __init__(self, state_count, action_count, seed=None):
         self.state_count = state_count
         self.action_count = action_count
+        self.seed = seed
 
         # Set random seed for reproducibility
         if seed is not None:
@@ -34,7 +35,11 @@ class Environment:
         for s in range(self.state_count):
             for a in range(self.action_count):
                 # Clip rewards to a reasonable range for stability
-                rewards[s, a] = np.clip(np.random.normal(1, np.random.random()**2), 0, 5)
+                # rewards[s, a] = np.clip(np.random.normal(1, np.random.random()**2), 0, 5)
+                if s % 2 != 0:
+                    rewards[s, a] = np.random.uniform(0, 0.2)  # Low reward
+                else:
+                    rewards[s, a] = np.random.uniform(0.8, 1.0)  # High reward
         return rewards
 
     @staticmethod
@@ -59,7 +64,7 @@ class Environment:
     
     # Ziying
     def copy(self):
-        new_env = Environment(self.state_count, self.action_count)
+        new_env = Environment(self.state_count, self.action_count, self.seed)
         new_env.kernels = np.copy(self.kernels)
         new_env.rewards = np.copy(self.rewards)
         new_env.nominal_kernels = np.copy(self.nominal_kernels)
@@ -222,7 +227,7 @@ class RobotEnvironment(Environment):
         return rewards
     
     def copy(self):
-        new_env = RobotEnvironment(self.alpha, self.beta)
+        new_env = RobotEnvironment(self.alpha, self.beta, self.seed)
         new_env.kernels = np.copy(self.kernels)
         new_env.rewards = np.copy(self.rewards)
         new_env.nominal_kernels = np.copy(self.nominal_kernels)
@@ -260,7 +265,7 @@ class RobotEnvironment(Environment):
             total_beta += new_beta
             
             # Create a new Environment with the perturbed kernel and original rewards
-            new_env = RobotEnvironment(new_alpha, new_beta)
+            new_env = RobotEnvironment(new_alpha, new_beta, self.seed)
             uncertainty_set.append(new_env)
 
             # Log details of the current MDP in the uncertainty set
@@ -276,7 +281,7 @@ class RobotEnvironment(Environment):
         average_beta = total_beta / num_mdps
 
         # Create an Environment object for the average MDP
-        average_env = RobotEnvironment(average_alpha, average_beta)
+        average_env = RobotEnvironment(average_alpha, average_beta, self.seed)
 
         # Log the average MDP details
         logging.info("Average MDP:")
@@ -340,7 +345,7 @@ class InventoryEnvironment(Environment):
         return demand_prob / demand_prob.sum()  # Normalize to make a valid probability distribution
 
     def copy(self):
-        new_env = InventoryEnvironment(self.state_count, self.action_count, self.max_demand, self.demand_prob)
+        new_env = InventoryEnvironment(self.state_count, self.action_count, self.max_demand, self.demand_prob, self.seed)
         new_env.kernels = np.copy(self.kernels)
         new_env.rewards = np.copy(self.rewards)
         new_env.nominal_kernels = np.copy(self.nominal_kernels)
@@ -379,6 +384,7 @@ class GamblerEnvironment(Environment):
     def __init__(self, state_count, head_prob, seed=None):
         self.state_count = state_count
         self.action_count = state_count
+        self.seed = seed
         self.goal = state_count - 1
         self.head_prob = head_prob
 
@@ -414,7 +420,7 @@ class GamblerEnvironment(Environment):
         return rewards
     
     def copy(self):
-        new_env = GamblerEnvironment(self.state_count, self.head_prob)
+        new_env = GamblerEnvironment(self.state_count, self.head_prob, self.seed)
         new_env.kernels = np.copy(self.kernels)
         new_env.rewards = np.copy(self.rewards)
         new_env.nominal_kernels = np.copy(self.nominal_kernels)
@@ -487,4 +493,186 @@ class GamblerEnvironment(Environment):
         logging.info("=" * 50)
 
         return uncertainty_set, average_env
+    
+class DataCenterEnvironment(Environment):
+    def __init__(self, alpha=0.6, beta=0.4, seed=None):
+        """
+        数据中心耗能优化环境
+        :param alpha: 'normal' 状态转移到 'overloaded' 的概率
+        :param beta: 'overloaded' 状态转移到 'failed' 的概率
+        :param seed: 随机数种子
+        """
+        self.seed = seed
+        self.state_count = 3  # 状态: 'normal', 'overloaded', 'failed'
+        self.action_count = 2  # 动作: 'allocate', 'idle'
+        # 状态转移概率
+        self.alpha = alpha  # 正常运行转为过载的概率
+        self.beta = beta    # 过载转为宕机的概率
+        # 奖励
+        self.r_allocate_normal = 100  # 正常状态下分配任务的奖励
+        self.r_allocate_overloaded = 50  # 过载状态下分配任务的奖励
+        self.r_idle = 10  # 待机奖励（低收益但保护服务器）
+        self.r_failed = 0  # 宕机状态的奖励
+
+        self.rng = np.random.default_rng(seed)  # 随机数生成器
+        self.current_state = 0  # 初始状态为 'normal'
+
+        # Generate nominal MDP
+        self.kernels = self._generate_transition_kernels()
+        self.rewards = self._generate_rewards()
+
+        # Save nominal MDP
+        self.nominal_kernels = self.kernels.copy()
+        self.nominal_rewards = self.rewards.copy()
+
+    def _generate_transition_kernels(self):
+        """Generate transition probability kernels for all states and actions."""
+        kernels = np.zeros((self.state_count, self.action_count, self.state_count))
+
+        # Action 'allocate' (action index 0)
+        kernels[0, 0, 0] = 1 - self.alpha   # Normal to Normal
+        kernels[0, 0, 1] = self.alpha       # Normal to Overloaded
+        kernels[0, 0, 2] = 0                # Normal to Failed
+        kernels[1, 0, 0] = 0                # Overloaded to Normal
+        kernels[1, 0, 1] = 1 - self.beta    # Overloaded to Overloaded
+        kernels[1, 0, 2] = self.beta        # Overloaded to Failed
+        kernels[2, 0, 2] = 1                # Failed to Failed
+
+        # Action 'idle' (action index 1)
+        kernels[0, 1, 0] = 1  # High stays High
+        kernels[1, 1, 1] = 1  # Low stays Low
+        kernels[2, 1, 2] = 1  # Dead stays Dead
+
+        return kernels
+    
+    def _generate_rewards(self):
+        """Generate reward matrix for all states and actions."""
+        rewards = np.zeros((self.state_count, self.action_count))
+
+        # Rewards for actions
+        rewards[0, 0] = self.r_allocate_normal          # Normal state, allocate
+        rewards[1, 0] = self.r_allocate_overloaded      # Overloaded state, allocate
+        rewards[0, 1] = self.r_idle                     # Normal state, idle
+        rewards[1, 1] = self.r_idle                     # Overloaded state, idle
+        rewards[2, 0] = self.r_failed                   # Failed state, allocate
+        rewards[2, 1] = self.r_failed                   # Failed state, idle
+        return rewards
+
+    def step(self, action):
+        """
+        执行动作并返回新状态、奖励和是否结束
+        :param action: 0 表示 'allocate', 1 表示 'idle'
+        :return: (新状态, 奖励, 是否结束)
+        """
+        if self.current_state == 2:  # 当前状态为 'failed'
+            return self.current_state, self.r_failed, True  # 保持终止状态
+        reward = 0
+        if action == 0:  # 'allocate' 动作
+            if self.current_state == 0:  # 'normal' 状态
+                reward = self.r_allocate_normal
+                self.current_state = 1 if self.rng.random() < self.alpha else 0
+            elif self.current_state == 1:  # 'overloaded' 状态
+                reward = self.r_allocate_overloaded
+                self.current_state = 2 if self.rng.random() < self.beta else 1
+        elif action == 1:  # 'idle' 动作
+            reward = self.r_idle  # 待机的固定奖励
+        done = self.current_state == 2  # 宕机状态为终止
+        return self.current_state, reward, done
+    
+    def reset(self):
+        """重置环境到初始状态"""
+        self.current_state = 0  # 初始状态为 'normal'
+        return self.current_state
+    
+    def copy(self):
+        new_env = DataCenterEnvironment(self.alpha, self.beta, self.seed)
+        new_env.kernels = np.copy(self.kernels)
+        new_env.rewards = np.copy(self.rewards)
+        new_env.nominal_kernels = np.copy(self.nominal_kernels)
+        new_env.nominal_rewards = np.copy(self.nominal_rewards)
+        return new_env
+    
+    def create_uncertainty_set(self, R, bias=0, num_mdps=10):
+        """
+        Create an uncertainty set of MDPs based on the nominal MDP, 
+        and compute the average perturbed kernels and rewards as a new MDP.
+
+        Args:
+            R (float): Maximum perturbation radius.
+            bias (float): Bias to be added to the noise, introducing asymmetry.
+            num_mdps (int): Number of MDPs in the uncertainty set.
+
+        Returns:
+            tuple: A tuple containing:
+                - list[Environment]: A list of Environment objects representing the uncertainty set.
+                - Environment: An Environment object representing the MDP with average kernels and rewards.
+        """
+        # Ensure NumPy arrays are printed in full
+        np.set_printoptions(threshold=np.inf, suppress=True, precision=6)
+
+        uncertainty_set = []
+        
+        total_alpha = 0
+        total_beta = 0
+
+        for i in range(num_mdps):
+            new_alpha = self._perturb_parameter(self.alpha, R, bias)
+            new_beta = self._perturb_parameter(self.beta, R, bias)
+            
+            total_alpha += new_alpha
+            total_beta += new_beta
+            
+            # Create a new Environment with the perturbed kernel and original rewards
+            new_env = DataCenterEnvironment(new_alpha, new_beta, self.seed)
+            uncertainty_set.append(new_env)
+
+            # Log details of the current MDP in the uncertainty set
+            logging.info(f"Uncertainty Set MDP {i+1}:")
+            logging.info(f"Alpha: {new_alpha}")
+            logging.info(f"Beta: {new_beta}")
+            logging.info(f"Kernels:\n{new_env.kernels}")
+            logging.info(f"Rewards:\n{new_env.rewards}")
+            logging.info("-" * 50)
+        
+        # Compute the averages
+        average_alpha = total_alpha / num_mdps
+        average_beta = total_beta / num_mdps
+
+        # Create an Environment object for the average MDP
+        average_env = DataCenterEnvironment(average_alpha, average_beta, self.seed)
+
+        # Log the average MDP details
+        logging.info("Average MDP:")
+        logging.info(f"Alpha: {average_alpha}")
+        logging.info(f"Beta: {average_beta}")
+        logging.info(f"Kernels:\n{average_env.kernels}")
+        logging.info(f"Rewards:\n{average_env.rewards}")
+        logging.info("=" * 50)
+
+        return uncertainty_set, average_env
+    
+class RandomMDPEnvironment(Environment):
+    def __init__(self, state_count, action_count, seed=None):
+        super().__init__(state_count, action_count, seed)
+    
+    def _generate_transition_kernels(self):
+        return super()._generate_transition_kernels()
+    
+    def _generate_rewards(self):
+        return super()._generate_rewards()
+
+# 测试环境
+if __name__ == "__main__":
+   env = DataCenterEnvironment(alpha=0.7, beta=0.5, seed=42)
+   state = env.reset()
+   done = False
+   total_reward = 0
+   print("开始数据中心优化模拟")
+   while not done:
+       action = np.random.choice(2)  # 随机选择动作 (0: 'allocate', 1: 'idle')
+       next_state, reward, done = env.step(action)
+       total_reward += reward
+       print(f"状态: {state}, 动作: {action}, 新状态: {next_state}, 奖励: {reward}, 是否结束: {done}")
+       state = next_state
+   print(f"总奖励: {total_reward}")
 

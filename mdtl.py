@@ -59,9 +59,9 @@ def MDTL_Periodic(uncertainty_set, T, K, gamma, lambdas, E, state_count, action_
 
             # Check for convergence
             # max_change = 0
-            # for k in range(K):
-            #     max_change = max(max_change, np.max(np.abs(Q_k[k] - Q_result)))
-            #     Q_k[k] = Q_result.copy()
+            for k in range(K):
+                # max_change = max(max_change, np.max(np.abs(Q_k[k] - Q_result)))
+                Q_k[k] = Q_result.copy()
 
             # If the maximum change is below the tolerance, stop iterations
             # if max_change < tolerance:

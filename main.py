@@ -4,7 +4,7 @@ import json
 import os
 import logging
 from datetime import datetime
-from environment import Environment, RobotEnvironment, InventoryEnvironment, GamblerEnvironment
+from environment import Environment, RobotEnvironment, InventoryEnvironment, GamblerEnvironment, DataCenterEnvironment
 # from config import CONFIG, MODE
 from mdtl import MDTL_Periodic
 from policy_eva import policy_evaluation
@@ -26,7 +26,8 @@ def main(args):
     aggregation_mode = args.aggregation_mode 
     eva_max_iterations = args.eva_max_iterations
     bias = args.bias
-    R = args.R 
+    R_train = args.R_train
+    R_uncertain = args.R_uncertain
     R_test = args.R_test
     E = args.E
     num_mdps = args.num_mdps 
@@ -60,10 +61,12 @@ def main(args):
             env = InventoryEnvironment(state_count=state_count, action_count=action_count, max_demand=max_demand, seed=random_seed)
         elif env_type == 'gambler':
             env = GamblerEnvironment(state_count=state_count, head_prob=head_prob, seed=random_seed)
+        elif env_type == 'data':
+            env = DataCenterEnvironment(alpha=alpha, beta=beta, seed=random_seed)
         else:
             env = Environment(state_count=state_count, action_count=action_count, seed=random_seed)
         if num_mdps > 1:
-            uncertainty_set, average_env = env.create_uncertainty_set(num_mdps=num_mdps, R=R, bias=bias)
+            uncertainty_set, average_env = env.create_uncertainty_set(num_mdps=num_mdps, R=R_uncertain, bias=bias)
         else:
             uncertainty_set, average_env = [env.copy()], env.copy()
         if learn_domain == 'avg':
@@ -89,7 +92,7 @@ def main(args):
         E=E,  # Aggregation interval fixed as an example
         state_count=state_count,
         action_count=action_count,
-        R=R,
+        R=R_train,
         mode=aggregation_mode
     )
     logging.info("MDTL_Periodic completed.")
@@ -143,7 +146,7 @@ if __name__ == "__main__":
     parser.add_argument("--beta", type=float, default=0.1, help="Pr(stay at low charge if searching | now have low charge) (default: 0.1)")
     parser.add_argument("--max_demand", type=int, default=29, help="Max demand in Inventory Environment (default: 29)")
     parser.add_argument("--head_prob", type=float, default=0.4, help="The probability of heads for the coin flip (default: 0.4)")
-    parser.add_argument("--env_type", type=str, choices=["robot", "inventory", "gambler", "env"], default="env", help="Environment type: RobotEnvironment, InventoryEnvironment, or Environment (default: Environment)")
+    parser.add_argument("--env_type", type=str, choices=["robot", "inventory", "gambler", "data", "env"], default="env", help="Environment type (default: Environment)")
     parser.add_argument("--total_step", type=int, default=5000, help="Total number of steps to run MDTL (default: 100)")
     parser.add_argument("--learning_rate", type=float, default=0.1, help="Learning rate for MDTL (default: 0.01)")
     parser.add_argument("--discount_rate", type=float, default=0.95, help="Discount factor for rewards (default: 0.95)")
@@ -151,8 +154,9 @@ if __name__ == "__main__":
     parser.add_argument("--eva_max_iterations", type=int, default=5000)
     parser.add_argument("--policy_type", type=str, default="deterministic")
     parser.add_argument("--learn_domain", type=str, default="nominal", help="avg")
-    parser.add_argument("--R", type=float, default=0.4, help="Radius for uncertainty set (default: 0.4)")
-    parser.add_argument("--R_test", type=float, default=0.4, help="Radius for uncertainty set (default: 0.4)")
+    parser.add_argument("--R_train", type=float, default=0.4, help="Radius for mdtl training (default: 0.4)")
+    parser.add_argument("--R_uncertain", type=float, default=0.4, help="Radius for uncertainty set (default: 0.4)")
+    parser.add_argument("--R_test", type=float, default=0.4, help="Radius for policy evaluation (default: 0.4)")
     parser.add_argument("--bias", type=float, default=0.1, help="Bias for uncertainty set (default: 0.1)")
     parser.add_argument("--num_mdps", type=int, default=2, help="Number of MDPs in the uncertainty set (default: 2)")
     parser.add_argument("--random_seed", type=int, default=None, help="Random seed for reproducibility (default: 42)")
