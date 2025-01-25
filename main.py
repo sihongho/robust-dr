@@ -4,7 +4,7 @@ import json
 import os
 import logging
 from datetime import datetime
-from environment import Environment, RobotEnvironment, InventoryEnvironment, GamblerEnvironment, DataCenterEnvironment
+from environment import Environment, RobotEnvironment, InventoryEnvironment, GamblerEnvironment, DataCenterEnvironment, RandomMDPEnvironment
 # from config import CONFIG, MODE
 from mdtl import MDTL_Periodic
 from policy_eva import policy_evaluation
@@ -19,6 +19,9 @@ def main(args):
     beta = args.beta
     max_demand = args.max_demand
     head_prob = args.head_prob
+    bottom_states = args.bottom_states
+    low_reward = args.low_reward
+    max_reward = args.max_reward
     env_type = args.env_type 
     total_step = args.total_step 
     learning_rate = args.learning_rate 
@@ -63,6 +66,8 @@ def main(args):
             env = GamblerEnvironment(state_count=state_count, head_prob=head_prob, seed=random_seed)
         elif env_type == 'data':
             env = DataCenterEnvironment(alpha=alpha, beta=beta, seed=random_seed)
+        elif env_type == 'random':
+            env = RandomMDPEnvironment(state_count=state_count, action_count=action_count, bottom_states=bottom_states, low_reward=low_reward, max_reward=max_reward, seed=random_seed)
         else:
             env = Environment(state_count=state_count, action_count=action_count, seed=random_seed)
         if num_mdps > 1:
@@ -146,7 +151,10 @@ if __name__ == "__main__":
     parser.add_argument("--beta", type=float, default=0.1, help="Pr(stay at low charge if searching | now have low charge) (default: 0.1)")
     parser.add_argument("--max_demand", type=int, default=29, help="Max demand in Inventory Environment (default: 29)")
     parser.add_argument("--head_prob", type=float, default=0.4, help="The probability of heads for the coin flip (default: 0.4)")
-    parser.add_argument("--env_type", type=str, choices=["robot", "inventory", "gambler", "data", "env"], default="env", help="Environment type (default: Environment)")
+    parser.add_argument("--bottom_states", type=int, default=1, help="Bottom states for new random MDP")
+    parser.add_argument("--low_reward", type=int, default=1, help="lower limit reward")
+    parser.add_argument("--max_reward", type=int, default=1, help="higher limit reward")
+    parser.add_argument("--env_type", type=str, choices=["robot", "inventory", "gambler", "data", "random", "env"], default="env", help="Environment type (default: Environment)")
     parser.add_argument("--total_step", type=int, default=5000, help="Total number of steps to run MDTL (default: 100)")
     parser.add_argument("--learning_rate", type=float, default=0.1, help="Learning rate for MDTL (default: 0.01)")
     parser.add_argument("--discount_rate", type=float, default=0.95, help="Discount factor for rewards (default: 0.95)")

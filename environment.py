@@ -652,15 +652,106 @@ class DataCenterEnvironment(Environment):
         return uncertainty_set, average_env
     
 class RandomMDPEnvironment(Environment):
-    def __init__(self, state_count, action_count, seed=None):
+    def __init__(self, state_count, action_count, bottom_states, low_reward, max_reward, seed=None):
+        self.bottom_states = bottom_states
+        self.low_reward = low_reward
+        self.max_reward = max_reward
+        
         super().__init__(state_count, action_count, seed)
     
     def _generate_transition_kernels(self):
-        return super()._generate_transition_kernels()
+        kernels = np.zeros((self.state_count, self.action_count, self.state_count))
+        for s in range(self.state_count):
+            for a in range(self.action_count):
+                # 动作 a 对应的转移概率权重
+                weights = np.random.rand(s + 1) + a  # 动作对状态转移的影响
+                transition_probs = weights / weights.sum()  # 归一化
+                kernels[s, a, :s + 1] = transition_probs
+        return kernels
+
     
     def _generate_rewards(self):
-        return super()._generate_rewards()
+        rewards = np.zeros((self.state_count, self.action_count))
+        for s in range(self.bottom_states):
+            rewards[s, :] = self.low_reward
+        for s in range(self.bottom_states, self.state_count):
+            rewards[s, :] = np.random.uniform(low=0, high=self.max_reward, size=(self.action_count,))
+        return rewards
+    
+    def copy(self):
+        new_env = RandomMDPEnvironment(self.state_count, self.action_count, self.bottom_states, self.low_reward, self.max_reward, self.seed)
+        new_env.kernels = np.copy(self.kernels)
+        new_env.rewards = np.copy(self.rewards)
+        new_env.nominal_kernels = np.copy(self.nominal_kernels)
+        new_env.nominal_rewards = np.copy(self.nominal_rewards)
+        return new_env
+    
+    def create_uncertainty_set(self, R, bias=0, num_mdps=10):
+        """
+        Create an uncertainty set of MDPs based on the nominal MDP, 
+        and compute the average perturbed kernels and rewards as a new MDP.
 
+        Args:
+            R (float): Maximum perturbation radius.
+            bias (float): Bias to be added to the noise, introducing asymmetry.
+            num_mdps (int): Number of MDPs in the uncertainty set.
+
+        Returns:
+            tuple: A tuple containing:
+                - list[Environment]: A list of Environment objects representing the uncertainty set.
+                - Environment: An Environment object representing the MDP with average kernels and rewards.
+        """
+        # Ensure NumPy arrays are printed in full
+        np.set_printoptions(threshold=np.inf, suppress=True, precision=6)
+
+        uncertainty_set = []
+        
+        # Initialize accumulators for kernels and rewards
+        total_kernels = np.zeros_like(self.nominal_kernels)
+        total_rewards = np.zeros_like(self.nominal_rewards)
+
+        for i in range(num_mdps):
+            # Create a new perturbed kernel
+            uncertain_kernels = np.zeros_like(self.nominal_kernels)
+            for s in range(self.state_count):
+                for a in range(self.action_count):
+                    uncertain_kernels[s, a] = self._add_perturbation(self.nominal_kernels[s, a], R, bias)
+            
+            # Accumulate the perturbed kernels and rewards
+            total_kernels += uncertain_kernels
+            total_rewards += self.nominal_rewards  # Rewards are not perturbed
+            
+            # Create a new Environment with the perturbed kernel and original rewards
+            new_env = RandomMDPEnvironment(self.state_count, self.action_count, self.bottom_states, self.low_reward, self.max_reward, self.seed)
+            new_env.kernels = uncertain_kernels  # Assign the perturbed kernels
+            new_env.rewards = self.nominal_rewards.copy()  # Use the same reward structure
+            uncertainty_set.append(new_env)
+
+            # Log details of the current MDP in the uncertainty set
+            logging.info(f"Uncertainty Set MDP {i+1}:")
+            logging.info(f"Kernels:\n{uncertain_kernels}")
+            logging.info(f"Rewards:\n{self.nominal_rewards}")
+            logging.info("-" * 50)
+        
+        # Compute the averages
+        average_kernels = total_kernels / num_mdps
+        average_rewards = total_rewards / num_mdps
+
+        # Create an Environment object for the average MDP
+        average_env = RandomMDPEnvironment(self.state_count, self.action_count, self.bottom_states, self.low_reward, self.max_reward, self.seed)
+        average_env.kernels = average_kernels
+        average_env.rewards = average_rewards
+
+        # Log the average MDP details
+        logging.info("Average MDP:")
+        logging.info(f"Kernels:\n{average_kernels}")
+        logging.info(f"Rewards:\n{average_rewards}")
+        logging.info("=" * 50)
+
+        return uncertainty_set, average_env
+    
+
+    
 # 测试环境
 if __name__ == "__main__":
    env = DataCenterEnvironment(alpha=0.7, beta=0.5, seed=42)
