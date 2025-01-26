@@ -510,7 +510,7 @@ class DataCenterEnvironment(Environment):
         self.beta = beta    # 过载转为宕机的概率
         # 奖励
         self.r_allocate_normal = 100  # 正常状态下分配任务的奖励
-        self.r_allocate_overloaded = 50  # 过载状态下分配任务的奖励
+        self.r_allocate_overloaded = 100  # 过载状态下分配任务的奖励
         self.r_idle = 10  # 待机奖励（低收益但保护服务器）
         self.r_failed = 0  # 宕机状态的奖励
 
@@ -668,7 +668,6 @@ class RandomMDPEnvironment(Environment):
                 transition_probs = weights / weights.sum()  # 归一化
                 kernels[s, a, :s + 1] = transition_probs
         return kernels
-
     
     def _generate_rewards(self):
         rewards = np.zeros((self.state_count, self.action_count))
@@ -685,6 +684,37 @@ class RandomMDPEnvironment(Environment):
         new_env.nominal_kernels = np.copy(self.nominal_kernels)
         new_env.nominal_rewards = np.copy(self.nominal_rewards)
         return new_env
+    
+    def _add_perturbation(self, nominal_probs, R, bias=0):
+        """
+        Add a bounded, biased perturbation to the last element of each row in the nominal probabilities.
+
+        Args:
+            nominal_probs (np.ndarray): The nominal probability distribution (2D array).
+            R (float): Maximum perturbation radius for each probability element.
+            bias (float): Bias to be added to the noise, introducing asymmetry.
+
+        Returns:
+            np.ndarray: Perturbed probability distribution.
+        """
+        # Create a copy to avoid modifying the original array
+        perturbed_probs = nominal_probs.copy()
+
+        # Generate noise for the last element in each row
+        noise = np.random.uniform(-R, R) + bias
+
+        # Add noise to the last element of each row
+        perturbed_probs[-1] += noise
+    
+        perturbed_probs = np.clip(perturbed_probs, 0, None)  # Clip to non-negative
+        total = perturbed_probs.sum()
+        if total == 0:
+            # Fallback to nominal_probs if all probabilities are clipped
+            perturbed_probs = nominal_probs
+        else:
+            perturbed_probs /= total  # Normalize to ensure sum = 1
+
+        return perturbed_probs
     
     def create_uncertainty_set(self, R, bias=0, num_mdps=10):
         """
