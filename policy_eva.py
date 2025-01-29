@@ -49,7 +49,10 @@ def policy_evaluation(Q, env, R, gamma=0.99, theta=1e-6, max_iterations=1000, po
     rewards = env.rewards  # Shape: (state_count, action_count)
 
     # Initialize value function
-    V = np.zeros(state_count)
+    # V = np.zeros(state_count)
+    V = np.random.normal(loc=0.0, scale=1.0, size=state_count)
+    all_V = []
+    all_V.append(V.copy())
 
     for i in range(max_iterations):
         delta = 0
@@ -61,15 +64,18 @@ def policy_evaluation(Q, env, R, gamma=0.99, theta=1e-6, max_iterations=1000, po
                 for a in range(action_count)
             )
             delta = max(delta, abs(v - V[s]))
-        
-        # Check for convergence
-        if delta < theta:
-            print(f"Policy evaluation converged after {i + 1} iterations.")
-            break
-    else:
-        print("Policy evaluation reached the maximum number of iterations without full convergence.")
 
-    return V
+        # Save all_V value
+        all_V.append(V.copy())
+
+        # Check for convergence
+        # if delta < theta:
+        #     print(f"Policy evaluation converged after {i + 1} iterations.")
+        #     break
+        # else:
+        #     print("Policy evaluation reached the maximum number of iterations without full convergence.")
+
+    return V, all_V
 
 if __name__ == "__main__":
     # Initialize environment and uncertainty set

@@ -14,7 +14,7 @@ def main(args):
     ro_sin_ave = args.ro_sin_ave
     non_sin_ave = args.non_sin_ave
     total_step = args.total_step
-    x = np.arange(1, total_step + 1)
+    x = np.arange(total_step + 1)
     plt.figure(figsize=(14, 6))
 
     if ro_ave_mul != "":

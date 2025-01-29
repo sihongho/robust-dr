@@ -510,8 +510,8 @@ class DataCenterEnvironment(Environment):
         self.beta = beta    # 过载转为宕机的概率
         # 奖励
         self.r_allocate_normal = 100  # 正常状态下分配任务的奖励
-        self.r_allocate_overloaded = 100  # 过载状态下分配任务的奖励
-        self.r_idle = 10  # 待机奖励（低收益但保护服务器）
+        self.r_allocate_overloaded = 80  # 过载状态下分配任务的奖励
+        self.r_idle = 20  # 待机奖励（低收益但保护服务器）
         self.r_failed = 0  # 宕机状态的奖励
 
         self.rng = np.random.default_rng(seed)  # 随机数生成器

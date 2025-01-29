@@ -104,19 +104,19 @@ def main(args):
 
     # Policy evaluation
     logging.info("Running policy evaluation...")
-    V_nominal_nonrobust = policy_evaluation(Q_result, env, R=0, gamma=discount_rate, theta=1e-5, max_iterations=eva_max_iterations, policy_type=policy_type)
+    V_nominal_nonrobust, all_V_nominal_nonrobust = policy_evaluation(Q_result, env, R=0, gamma=discount_rate, theta=1e-5, max_iterations=eva_max_iterations, policy_type=policy_type)
     logging.info(f"Nominal Non-Robust Value Function: {V_nominal_nonrobust}")
 
     logging.info("Running robust policy evaluation...")
-    V_nominal_robust = policy_evaluation(Q_result, env, R=R_test, gamma=discount_rate, theta=1e-5, max_iterations=eva_max_iterations, policy_type=policy_type)
+    V_nominal_robust, all_V_nominal_robust = policy_evaluation(Q_result, env, R=R_test, gamma=discount_rate, theta=1e-5, max_iterations=eva_max_iterations, policy_type=policy_type)
     logging.info(f"Nominal Robust Value Function: {V_nominal_robust}")
 
     logging.info("Running avg policy evaluation...")
-    V_avg_nonrobust = policy_evaluation(Q_result, average_env, R=0, gamma=discount_rate, theta=1e-5, max_iterations=eva_max_iterations, policy_type=policy_type)
+    V_avg_nonrobust, _ = policy_evaluation(Q_result, average_env, R=0, gamma=discount_rate, theta=1e-5, max_iterations=eva_max_iterations, policy_type=policy_type)
     logging.info(f"Average Non-Robust Value Function: {V_avg_nonrobust}")
 
     logging.info("Running avg robust policy evaluation...")
-    V_avg_robust = policy_evaluation(Q_result, average_env, R=R_test, gamma=discount_rate, theta=1e-5, max_iterations=eva_max_iterations, policy_type=policy_type)
+    V_avg_robust, _ = policy_evaluation(Q_result, average_env, R=R_test, gamma=discount_rate, theta=1e-5, max_iterations=eva_max_iterations, policy_type=policy_type)
     logging.info(f"Average Robust Value Function: {V_avg_robust}")
 
     logging.info("Policy evaluation completed.")
@@ -124,6 +124,8 @@ def main(args):
     # Save final results
     results_path = os.path.join(experiment_dir, "results.json")
     all_Q_serializable = [q.tolist() for q in all_Q]
+    all_V_nominal_nonrobust_serializable = [v.tolist() for v in all_V_nominal_nonrobust]
+    all_V_nominal_robust_serializable = [v.tolist() for v in all_V_nominal_robust]
     with open(results_path, "w") as f:
         json.dump({
             "Q_result": Q_result.tolist(),
@@ -131,7 +133,9 @@ def main(args):
             "V_nominal_robust": V_nominal_robust.tolist(),
             "V_avg_nonrobust": V_avg_nonrobust.tolist(),
             "V_avg_robust": V_avg_robust.tolist(),
-            "all_Q": all_Q_serializable
+            "all_Q": all_Q_serializable, 
+            "all_V_nominal_nonrobust": all_V_nominal_nonrobust_serializable,
+            "all_V_nominal_robust": all_V_nominal_robust_serializable
         }, f, indent=4)
     logging.info(f"Results saved to {results_path}")
 
