@@ -188,7 +188,7 @@ class RobotEnvironment(Environment):
 
         # Constants for rewards
         self.r_search = 50   # reward for searching
-        self.r_wait = 10     # reward for waiting
+        self.r_wait = 12     # reward for waiting
         self.r_dead = 0      # reward (actually penalty) for dead
 
         super().__init__(self.state_count, self.action_count, seed)
