@@ -12,6 +12,46 @@ def calculate_optimal_value(V, sample_distribution, R):
     problem.solve()
     return problem.value
 
+# def calculate_optimal_value(V, sample_distribution, R):
+#     """Solve the optimization problem for worst-case expectation under L1 divergence.
+
+#     Computes:
+#         min_P   P dot V
+#     subject to:
+#         ||P - sample_distribution||_1 <= R,
+#         P >= 0,
+#         sum(P) == 1.
+
+#     Parameters:
+#         V (array of floats): Value function.
+#         sample_distribution (array of floats): Nominal probability vector.
+#         R (float): Robustness parameter.
+#     """
+#     if R == 0:
+#         return np.dot(V, sample_distribution)
+#     if R < 0:
+#         raise ValueError("Uncertainty parameter R must be at least 0.")
+#     if not np.isclose(np.sum(sample_distribution), 1.0, atol=1e-2):
+#         raise ValueError("sample_distribution should be a probability vector.")
+    
+#     # Define the decision variable (probability vector P)
+#     P = cp.Variable(len(V))
+    
+#     # Objective: minimize the expected value V dot P.
+#     objective = cp.Minimize(V @ P)
+    
+#     # Constraints: non-negative, sums to one, and L1 deviation constraint.
+#     constraints = [
+#         P >= 0,
+#         cp.sum(P) == 1,
+#         cp.norm(P - sample_distribution, 1) <= R
+#     ]
+    
+#     # Solve the problem.
+#     problem = cp.Problem(objective, constraints)
+#     problem.solve()
+#     return problem.value
+
 def MDTL_Periodic(uncertainty_set, T, K, gamma, lambdas, E, state_count, action_count, R, mode="avg", tolerance=1e-5):
     if mode not in {"avg", "max"}:
         raise ValueError("Mode must be 'avg' or 'max'.")
@@ -22,7 +62,7 @@ def MDTL_Periodic(uncertainty_set, T, K, gamma, lambdas, E, state_count, action_
     all_Q = []
 
     # Convergence flag
-    converged = False
+    # converged = False
 
     for t in range(T):
         logging.info(f"Step {t + 1}/{T}.")
@@ -45,6 +85,7 @@ def MDTL_Periodic(uncertainty_set, T, K, gamma, lambdas, E, state_count, action_
                         opt_all = calculate_optimal_value(V_k[k], next_state_distribution, R)
                     else:
                         opt_all = np.inner(V_k[k], next_state_distribution)
+                    # opt_all = calculate_optimal_value(V_k[k], next_state_distribution, R)
                     Q_k[k][s, a] = (1 - lambdas[t]) * Q_k[k][s, a] + lambdas[t] * (reward + gamma * opt_all)
 
         # Periodic aggregation: if t mod E == 0

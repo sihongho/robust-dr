@@ -780,7 +780,253 @@ class RandomMDPEnvironment(Environment):
 
         return uncertainty_set, average_env
     
+class VehicleRoutingEnvironment:
+    """
+    A simplified MDP environment for a Vehicle Routing Problem (VRP)
+    that automatically creates its own cost matrix of dimension
+    (num_customers+1) x (num_customers+1).
 
+    - We treat node 0 as the depot.
+    - Nodes 1..num_customers are the customers.
+    - State = (current_node, tuple_of_remaining_customers).
+    - Action = next_node_to_visit (an integer from [0..num_customers]).
+    - Rewards = negative of the travel cost.
+    """
+
+    def __init__(self, num_customers, seed=None):
+        """
+        :param num_customers: Number of customers (excluding depot).
+        :param seed: Random seed for reproducibility.
+        """
+        self.num_customers = num_customers
+        self.dimension = num_customers + 1  # total nodes (0=depot + customers)
+        
+        if seed is not None:
+            np.random.seed(seed)
+        
+        # Step 1: Build the cost matrix internally
+        self.cost_matrix = self._build_cost_matrix()
+        
+        # Step 2: Build the state and action spaces
+        self.state_map, self.reverse_state_map = self._build_state_space()
+        self.state_count = len(self.state_map)
+        self.action_count = self.dimension  # We allow choosing any next_node in [0..num_customers]
+
+        # Step 3: Build the MDP dynamics (transition probabilities + reward)
+        self.kernels = np.zeros((self.state_count, self.action_count, self.state_count))
+        self.rewards = np.zeros((self.state_count, self.action_count))
+        self._build_mdp_dynamics()
+
+        # Save nominal MDP
+        self.nominal_kernels = self.kernels.copy()
+        self.nominal_rewards = self.rewards.copy()
+
+    def _build_cost_matrix(self):
+        """
+        Create a random cost matrix of shape (dimension x dimension).
+        Diagonal = 0 (no cost to stay in same node).
+        Off-diagonal = random uniform [1..10] or whatever you prefer.
+        """
+        cost_matrix = np.zeros((self.dimension, self.dimension))
+        for i in range(self.dimension):
+            for j in range(self.dimension):
+                if i == j:
+                    cost_matrix[i, j] = 0.0
+                else:
+                    # Example: random cost in [1..10]
+                    cost_matrix[i, j] = np.random.uniform(1, 10)
+        return cost_matrix
+
+    def _build_state_space(self):
+        """
+        Build:
+         - state_map: (current_node, (remaining...)) -> state_index
+         - reverse_state_map: state_index -> (current_node, (remaining...))
+
+        We systematically generate all subsets of [1..num_customers]
+        for the "remaining" set, and pair them with each possible current node.
+        """
+        from itertools import combinations
+
+        # All subsets of customers
+        customers = range(1, self.num_customers + 1)
+        subsets = []
+        for r in range(self.num_customers + 1):
+            for combo in combinations(customers, r):
+                subsets.append(tuple(sorted(combo)))
+
+        all_states = []
+        for remaining_tuple in subsets:
+            for current_node in range(self.dimension):
+                all_states.append((current_node, remaining_tuple))
+
+        state_map = {s: idx for idx, s in enumerate(all_states)}
+        reverse_state_map = {idx: s for s, idx in state_map.items()}
+        return state_map, reverse_state_map
+
+    def _build_mdp_dynamics(self):
+        """
+        Build deterministic transitions + immediate reward = - cost_matrix.
+        If an action is invalid (choosing a node not in 'remaining' 
+        except returning to depot at the end), we penalize heavily.
+        """
+        for s_idx in range(self.state_count):
+            current_node, remaining = self.reverse_state_map[s_idx]
+            remaining_set = set(remaining)
+
+            for a in range(self.action_count):
+                # 'a' is the node we attempt to move to next
+                if len(remaining) == 0:
+                    # If no customers remain, the "valid" action is to go to depot (0).
+                    # If we're not already at depot and choose a=0, do that. 
+                    if a == 0 and current_node != 0:
+                        next_state = (0, ())
+                        reward = -self.cost_matrix[current_node][0]
+                    else:
+                        # Doing nothing or invalid => no real movement
+                        next_state = (current_node, remaining)
+                        reward = 0
+                else:
+                    # If 'a' is in the remaining set, we move there.
+                    if a in remaining_set:
+                        next_remaining = tuple(sorted(x for x in remaining if x != a))
+                        next_state = (a, next_remaining)
+                        reward = -self.cost_matrix[current_node][a]
+                    else:
+                        # Invalid => large negative penalty
+                        next_state = (current_node, remaining)
+                        reward = -9999
+
+                # Deterministic transition => set probability = 1
+                next_idx = self.state_map[next_state]
+                self.kernels[s_idx, a, next_idx] = 1.0
+                self.rewards[s_idx, a] = reward
+
+    def step(self, state_idx, action):
+        """
+        Return the next state index (deterministic).
+        """
+        probs = self.kernels[state_idx, action]
+        next_state_idx = np.random.choice(self.state_count, p=probs)
+        return next_state_idx
+
+    def get_reward(self, state_idx, action):
+        """
+        Return immediate reward for (state, action).
+        """
+        return self.rewards[state_idx, action]
+
+    def copy(self):
+        """
+        Return a deep copy of the environment.
+        """
+        new_env = VehicleRoutingEnvironment(self.num_customers)
+        new_env.cost_matrix = np.copy(self.cost_matrix)
+        new_env.state_map = self.state_map.copy()
+        new_env.reverse_state_map = self.reverse_state_map.copy()
+        new_env.state_count = self.state_count
+        new_env.action_count = self.action_count
+        new_env.kernels = np.copy(self.kernels)
+        new_env.rewards = np.copy(self.rewards)
+        new_env.nominal_kernels = np.copy(self.nominal_kernels)
+        new_env.nominal_rewards = np.copy(self.nominal_rewards)
+        return new_env
+    
+    def _add_perturbation(self, nominal_probs, R, bias=0):
+        """
+        Add a bounded, biased perturbation to the nominal probabilities.
+
+        Args:
+            nominal_probs (np.ndarray): The nominal probability distribution (1D array).
+            R (float): Maximum perturbation radius for each probability element.
+            bias (float): Bias to be added to the noise, introducing asymmetry.
+
+        Returns:
+            np.ndarray: Perturbed probability distribution.
+        """
+        # Generate noise with symmetric distribution
+        noise = np.random.uniform(-R, R, nominal_probs.shape)
+
+        # Add bias to introduce asymmetry
+        biased_noise = noise + bias
+
+        # Apply the biased noise to nominal probabilities
+        perturbed_probs = nominal_probs + biased_noise
+
+        # Ensure probabilities are non-negative and renormalize
+        perturbed_probs = np.clip(perturbed_probs, 0, None)  # Clip to non-negative
+        total = perturbed_probs.sum()
+        if total == 0:
+            # Fallback to nominal_probs if all probabilities are clipped
+            perturbed_probs = nominal_probs
+        else:
+            perturbed_probs /= total  # Normalize to ensure sum = 1
+
+        return perturbed_probs
+
+    def create_uncertainty_set(self, R, bias=0, num_mdps=10):
+        """
+        Create an uncertainty set of MDPs based on the nominal MDP, 
+        and compute the average perturbed kernels and rewards as a new MDP.
+
+        Args:
+            R (float): Maximum perturbation radius.
+            bias (float): Bias to be added to the noise, introducing asymmetry.
+            num_mdps (int): Number of MDPs in the uncertainty set.
+
+        Returns:
+            tuple: A tuple containing:
+                - list[Environment]: A list of Environment objects representing the uncertainty set.
+                - Environment: An Environment object representing the MDP with average kernels and rewards.
+        """
+        # Ensure NumPy arrays are printed in full
+        np.set_printoptions(threshold=np.inf, suppress=True, precision=6)
+
+        uncertainty_set = []
+        
+        # Initialize accumulators for kernels and rewards
+        total_kernels = np.zeros_like(self.nominal_kernels)
+        total_rewards = np.zeros_like(self.nominal_rewards)
+
+        for i in range(num_mdps):
+            # Create a new perturbed kernel
+            uncertain_kernels = np.zeros_like(self.nominal_kernels)
+            for s in range(self.state_count):
+                for a in range(self.action_count):
+                    uncertain_kernels[s, a] = self._add_perturbation(self.nominal_kernels[s, a], R, bias)
+            
+            # Accumulate the perturbed kernels and rewards
+            total_kernels += uncertain_kernels
+            total_rewards += self.nominal_rewards  # Rewards are not perturbed
+            
+            # Create a new Environment with the perturbed kernel and original rewards
+            new_env = Environment(self.state_count, self.action_count)
+            new_env.kernels = uncertain_kernels  # Assign the perturbed kernels
+            new_env.rewards = self.nominal_rewards.copy()  # Use the same reward structure
+            uncertainty_set.append(new_env)
+
+            # Log details of the current MDP in the uncertainty set
+            logging.info(f"Uncertainty Set MDP {i+1}:")
+            logging.info(f"Kernels:\n{uncertain_kernels}")
+            logging.info(f"Rewards:\n{self.nominal_rewards}")
+            logging.info("-" * 50)
+        
+        # Compute the averages
+        average_kernels = total_kernels / num_mdps
+        average_rewards = total_rewards / num_mdps
+
+        # Create an Environment object for the average MDP
+        average_env = Environment(self.state_count, self.action_count)
+        average_env.kernels = average_kernels
+        average_env.rewards = average_rewards
+
+        # Log the average MDP details
+        logging.info("Average MDP:")
+        logging.info(f"Kernels:\n{average_kernels}")
+        logging.info(f"Rewards:\n{average_rewards}")
+        logging.info("=" * 50)
+
+        return uncertainty_set, average_env
     
 # 测试环境
 if __name__ == "__main__":
