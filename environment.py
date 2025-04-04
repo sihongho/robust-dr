@@ -260,6 +260,10 @@ class RobotEnvironment(Environment):
         for i in range(num_mdps):
             new_alpha = self._perturb_parameter(self.alpha, R, bias)
             new_beta = self._perturb_parameter(self.beta, R, bias)
+
+            if i == num_mdps - 1:
+                new_alpha = self.alpha
+                new_beta = self.beta
             
             total_alpha += new_alpha
             total_beta += new_beta
